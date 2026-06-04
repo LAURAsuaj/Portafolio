@@ -189,18 +189,18 @@ nav{
 /* LANYARD SVG */
 #lanyard-svg{
   position:absolute;
-  top:0;left:50%;
-  transform:translateX(-50%);
+  top:0;left:0;
+  width:100%;height:100%;
   pointer-events:none;
   z-index:8;
-  width:260px;
-  height:160px;
+  overflow:visible;
 }
 
 /* ID CARD */
 #id-card{
   position:absolute;
-  top:100px;
+  top:0;
+  left:0;
   width:252px;
   background:var(--white);
   border:1px solid var(--line);
@@ -572,10 +572,10 @@ footer{
 
   <div class="hero-right">
     <!-- Lanyard rope drawn by JS -->
-    <svg id="lanyard-svg" viewBox="0 0 260 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path id="rope-path" d="" stroke="#0d0d0d" stroke-width="1.5" opacity="0.3"/>
-      <rect id="clip-rect" x="110" y="28" width="40" height="14" rx="3" fill="#1a1a1a" opacity="0.7"/>
-      <line x1="125" y1="35" x2="135" y2="35" stroke="#888" stroke-width="1"/>
+    <svg id="lanyard-svg" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path id="rope-path" d="" stroke="#0d0d0d" stroke-width="1.5" opacity="0.35"/>
+      <rect id="clip-rect" x="0" y="0" width="44" height="16" rx="4" fill="#1a1a1a" opacity="0.75"/>
+      <line id="clip-line" x1="0" y1="0" x2="0" y2="0" stroke="#777" stroke-width="1.5"/>
     </svg>
 
     <div id="id-card">
@@ -653,7 +653,7 @@ footer{
       <tr><td>Universidad</td><td>Konrad Lorenz</td></tr>
       <tr><td>Carrera</td><td>Ing. de Sistemas</td></tr>
       <tr><td>Período</td><td>2023 – 2028</td></tr>
-      <tr><td>Semestre</td><td>7.° / 9</td></tr>
+      <tr><td>Semestre</td><td>7.° / 10</td></tr>
       <tr><td>Enfoque</td><td>Web Dev + DBs</td></tr>
       <tr><td>OS favorito</td><td>Linux / Ubuntu</td></tr>
       <tr><td>Certificaciones</td><td>CCNA ×2</td></tr>
@@ -674,7 +674,7 @@ footer{
     <div class="skill-cell">
       <div class="skill-cat">Frontend</div>
       <div class="skill-tags">
-        <span class="stag">HTML5</span><span class="stag">JavaScript</span><span class="stag">React</span><span class="stag">Angular</span>
+        <span class="stag">HTML5</span><span class="stag">CSS3</span><span class="stag">JavaScript</span><span class="stag">React</span><span class="stag">Angular</span>
       </div>
     </div>
     <div class="skill-cell">
@@ -738,7 +738,7 @@ footer{
     <div class="proj-card reveal">
       <div class="proj-num">Proyecto 03</div>
       <div class="proj-title">Desarrollo de videojuegos</div>
-      <div class="proj-desc">Proyectos académicos de videojuegos aplicando principios de POO, game loops, detección de colisiones e interfaces interactivas — construidos desde Unity</div>
+      <div class="proj-desc">Proyectos académicos de videojuegos aplicando principios de POO, game loops, detección de colisiones e interfaces interactivas — construidos desde cero en Java.</div>
       <div class="proj-tags">
         <span class="ptag">Java</span><span class="ptag">POO</span><span class="ptag">Game Logic</span>
       </div>
@@ -945,150 +945,124 @@ window.addEventListener('scroll',()=>{
 })();
 
 // ============================================================
-// ID CARD — PENDULUM PHYSICS ON ENTRY + DRAG
+// ID CARD — PENDULUM PHYSICS (translate from fixed pivot)
 // ============================================================
 (function(){
-  const card=document.getElementById('id-card');
-  const hint=document.getElementById('card-hint');
-  const ropeEl=document.getElementById('rope-path');
-  const heroRight=document.querySelector('.hero-right');
+  const card = document.getElementById('id-card');
+  const hint = document.getElementById('card-hint');
+  const ropeEl = document.getElementById('rope-path');
+  const clipRect = document.getElementById('clip-rect');
+  const clipLine = document.getElementById('clip-line');
+  const container = document.querySelector('.hero-right');
 
-  // Pivot point (top center of hero-right column, relative to card's parent)
-  // We'll track card center angle from pivot
-  const PIVOT_X = 126; // half card width
-  const PIVOT_Y = -60; // above card top
-  const ARM = 320; // pendulum arm length in px (visual)
+  // The card is position:absolute inside .hero-right
+  // Pivot = top-center of .hero-right (where the clip is)
+  // ARM = distance from pivot to card top-center
+  const ARM = 200; // px — rope length
 
-  // Physics state
-  let angle = -0.6; // start tilted left (card falling from above)
+  // Pendulum angle: 0 = hanging straight down
+  let angle = 0;
   let angleVel = 0;
-  let angleDamp = 0.978;
-  let gravity = 0.0018;
-  let entryPhase = true;
-  let entryTimer = 0;
+  const GRAVITY = 0.003;
+  const DAMP = 0.976;
 
-  // Position card
-  let cardX = 0; // offset from center
-  let cardY = 0;
+  // Drop-in phase: card falls from above before swinging
+  let dropping = true;
+  let dropProgress = 0; // 0→1
 
-  // Drag state
+  // Drag
   let dragging = false;
-  let dragStartX=0, dragStartY=0;
-  let lastAngle = 0;
-  let prevX=0, prevAngle=0;
+  let prevMouseX = 0;
 
-  // Initial drop: card starts high and falls
-  let dropPhase = true;
-  let dropY = -400; // px above final position
-  let dropVY = 0;
-  let dropG = 0.6;
+  // Card natural tilt (slight rotation matching swing)
+  // We position by translating from pivot
+  function render() {
+    // Pivot in container coords: horizontal center, y=0 (top of container)
+    const containerW = container.offsetWidth;
+    const pivotX = containerW / 2; // px from container left
+    const pivotY = 30;             // px from container top (clip position)
 
-  function getCardRect(){
-    return card.getBoundingClientRect();
-  }
+    // Card top-center position
+    const cardTopX = pivotX + Math.sin(angle) * ARM;
+    const cardTopY = pivotY + Math.cos(angle) * ARM;
 
-  function applyTransform(){
-    const deg = angle * (180/Math.PI);
-    if(dropPhase){
-      card.style.transform=`translateY(${dropY}px) rotate(${deg}deg)`;
-    } else {
-      card.style.transform=`rotate(${deg}deg)`;
-    }
-    // Draw rope
-    drawRope(deg);
-  }
+    // Card is 252px wide, so left edge = cardTopX - 126
+    const cardLeft = cardTopX - 126;
+    const cardTop  = cardTopY;
 
-  function drawRope(deg){
-    // Rope goes from clip (top of SVG) down to card top-center
-    // Simulate natural droop based on angle
-    const cx = 130; // SVG center
-    const startX = cx;
-    const startY = 42;
-    // Card top center relative to SVG: card is centered, angle rotates it
-    const rad = angle;
-    const cardTopX = cx + Math.sin(rad)*80;
-    const cardTopY = startY + Math.cos(rad)*80;
-    const cpX = cx + Math.sin(rad)*40;
-    const cpY = startY + 40;
-    ropeEl.setAttribute('d',
-      `M${startX},${startY} Q${cpX},${cpY} ${cardTopX},${cardTopY}`
-    );
-  }
-
-  function physicsLoop(){
-    if(dropPhase){
-      dropVY += dropG;
-      dropY += dropVY;
-      if(dropY >= 0){
-        dropY = 0;
-        dropPhase = false;
-        // Convert downward velocity to angular velocity (collision)
-        angleVel = -0.018 * (dropVY/20);
-        angleDamp = 0.978;
+    if (dropping) {
+      // Ease in from above
+      dropProgress = Math.min(dropProgress + 0.018, 1);
+      const ease = 1 - Math.pow(1 - dropProgress, 3);
+      const startY = -420;
+      const currentY = startY + (cardTop - startY) * ease;
+      card.style.left = cardLeft + 'px';
+      card.style.top  = currentY + 'px';
+      card.style.transform = `rotate(${angle * (180/Math.PI)}deg)`;
+      // Rope: from pivot down to where card currently is
+      drawRope(pivotX, pivotY, cardTopX, currentY);
+      if (dropProgress >= 1) {
+        dropping = false;
+        // Give it an initial nudge so it swings
+        angleVel = 0.018;
       }
-      applyTransform();
-      requestAnimationFrame(physicsLoop);
-      return;
+    } else {
+      card.style.left = cardLeft + 'px';
+      card.style.top  = cardTop + 'px';
+      card.style.transform = `rotate(${angle * (180/Math.PI)}deg)`;
+      drawRope(pivotX, pivotY, cardTopX, cardTop);
     }
+  }
 
-    if(!dragging){
-      // Pendulum: d²θ/dt² = -(g/L)*sin(θ)
-      angleVel += -gravity * Math.sin(angle);
-      angleVel *= angleDamp;
+  function drawRope(px, py, cx, cy) {
+    const cpx = (px + cx) / 2 + Math.sin(angle) * 10;
+    const cpy = (py + cy) / 2 - 10;
+    ropeEl.setAttribute('d', `M${px},${py} Q${cpx},${cpy} ${cx},${cy}`);
+    // Position clip rect centered on pivot
+    const clipW = 44, clipH = 16;
+    clipRect.setAttribute('x', px - clipW/2);
+    clipRect.setAttribute('y', py - clipH/2);
+    // Small horizontal scratch line inside clip
+    clipLine.setAttribute('x1', px - 10);
+    clipLine.setAttribute('y1', py);
+    clipLine.setAttribute('x2', px + 10);
+    clipLine.setAttribute('y2', py);
+  }
+
+  function loop() {
+    if (!dragging && !dropping) {
+      angleVel += -GRAVITY * Math.sin(angle);
+      angleVel *= DAMP;
       angle += angleVel;
     }
-
-    applyTransform();
-    requestAnimationFrame(physicsLoop);
+    render();
+    requestAnimationFrame(loop);
   }
 
-  // START: card enters from top
-  card.style.opacity='0';
-  setTimeout(()=>{
-    card.style.opacity='1';
-    card.style.transition='opacity 0.3s';
-    physicsLoop();
-  }, 400);
+  // Remove the static top:100px positioning so JS takes over
+  card.style.position = 'absolute';
+  card.style.top = '-420px';
+  card.style.left = '0px';
+  card.style.transformOrigin = '50% 0%'; // rotate from top-center of card
 
-  // DRAG
-  function getEventX(e){ return e.touches ? e.touches[0].clientX : e.clientX; }
-  function getEventY(e){ return e.touches ? e.touches[0].clientY : e.clientY; }
+  // Update SVG to cover full container height
+  const svg = document.getElementById('lanyard-svg');
+  svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;overflow:visible';
+  svg.setAttribute('viewBox', '');
+  svg.removeAttribute('viewBox');
+  // Use screen coords via getBoundingClientRect trick — simpler: just use container-relative px
+  // SVG with no viewBox and width/height 100% maps 1:1 to container px
 
-  function startDrag(e){
-    dragging=true;
-    hint.style.opacity='0';
-    const rect=card.getBoundingClientRect();
-    const pivotScreenX = rect.left + rect.width/2;
-    const pivotScreenY = rect.top + rect.height/2;
-    dragStartX = getEventX(e);
-    dragStartY = getEventY(e);
-    prevX = dragStartX;
-    prevAngle = angle;
-    card.style.transition='none';
-    if(e.cancelable) e.preventDefault();
-  }
+  card.style.opacity = '0';
+  setTimeout(() => {
+    card.style.opacity = '1';
+    card.style.transition = 'opacity 0.4s';
+    loop();
+  }, 300);
 
-  function onDrag(e){
-    if(!dragging) return;
-    const ex = getEventX(e);
-    const ey = getEventY(e);
-    // Get hero-right center as pivot
-    const heroRect = heroRight.getBoundingClientRect();
-    const pivotX = heroRect.left + heroRect.width/2;
-    const pivotY = heroRect.top + 40;
-    const dx = ex - pivotX;
-    const dy = ey - pivotY;
-    angle = Math.atan2(dx, dy);
-    angleVel = (ex - prevX) * 0.003;
-    prevX = ex;
-    if(e.cancelable) e.preventDefault();
-  }
-
-  function endDrag(e){
-    if(!dragging) return;
-    dragging=false;
-    // angleVel already set from last drag move
-  }
+  // ---- DRAG ----
+  function evX(e){ return e.touches ? e.touches[0].clientX : e.clientX; }
+  function evY(e){ return e.touches ? e.touches[0].clientY : e.clientY; }
 
   card.addEventListener('mousedown', startDrag);
   card.addEventListener('touchstart', startDrag, {passive:false});
@@ -1096,6 +1070,36 @@ window.addEventListener('scroll',()=>{
   document.addEventListener('touchmove', onDrag, {passive:false});
   document.addEventListener('mouseup', endDrag);
   document.addEventListener('touchend', endDrag);
+
+  function startDrag(e) {
+    if (dropping) return;
+    dragging = true;
+    hint.style.opacity = '0';
+    prevMouseX = evX(e);
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onDrag(e) {
+    if (!dragging) return;
+    const mx = evX(e);
+    const my = evY(e);
+    // Compute angle from pivot in screen space
+    const containerRect = container.getBoundingClientRect();
+    const pivotScreenX = containerRect.left + container.offsetWidth / 2;
+    const pivotScreenY = containerRect.top + 30;
+    const dx = mx - pivotScreenX;
+    const dy = my - pivotScreenY;
+    const targetAngle = Math.atan2(dx, dy);
+    angleVel = (targetAngle - angle) * 0.3;
+    angle = targetAngle;
+    prevMouseX = mx;
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+  }
 })();
 
 // ============================================================
